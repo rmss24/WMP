@@ -1,0 +1,45 @@
+# Dependencies
+node_modules/
+settings-ui/node_modules/
+
+# Build output
+dist/
+build/
+out/
+settings-ui/out/
+settings-ui/dist/
+dist-installer/
+
+# Native build artifacts
+overlay/*.exe
+overlay/*.dll
+overlay/*.pdb
+overlay/*.ilk
+overlay/*.obj
+overlay/*.o
+overlay/*.a
+overlay/*.lib
+overlay/build/
+overlay/cmake-build-*/
+
+# Logs and temporary files
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+*.tmp
+*.temp
+
+# Environment and local config
+.env
+.env.*
+!.env.example
+config.local.json
+
+# Editor and OS files
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+desktop.ini

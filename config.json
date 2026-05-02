@@ -1,0 +1,33 @@
+{
+  "version": 1,
+  "autoStart": false,
+  "debugMode": false,
+  "launchSettingsOnStart": true,
+  "character": {
+    "enabled": true,
+    "margin": 28,
+    "maxHeight": 327,
+    "maxWidth": 377,
+    "path": "C:\\Users\\mbite\\Documents\\Addiction_to_White_Monster_is_a_problem\\characters\\frieren\\frieren.gif"
+  },
+  "crosshair": {
+    "color": "#00FF50",
+    "enabled": false,
+    "gap": 5,
+    "length": 21,
+    "thickness": 2
+  },
+  "border": {
+    "color": "#FF3232",
+    "enabled": true,
+    "thickness": 3
+  },
+  "hud": {
+    "enabled": true,
+    "fontSize": 16
+  },
+  "overlay": {
+    "clickThrough": true,
+    "visible": false
+  }
+}

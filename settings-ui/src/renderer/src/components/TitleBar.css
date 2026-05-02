@@ -1,0 +1,64 @@
+.titlebar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: var(--titlebar-h);
+  padding: 0 8px 0 14px;
+  background: rgba(15, 15, 15, 0.5);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+  -webkit-app-region: drag;
+}
+
+.titlebar-drag {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+}
+
+.titlebar-icon {
+  font-size: 14px;
+  color: var(--accent);
+  line-height: 1;
+}
+
+.titlebar-title {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-2);
+  white-space: nowrap;
+}
+
+.titlebar-saved {
+  font-size: 11px;
+  color: #4ec94e;
+  margin-left: 8px;
+  animation: fadeIn 0.2s ease;
+}
+
+@keyframes fadeIn { from { opacity: 0 } to { opacity: 1 } }
+
+.titlebar-controls {
+  display: flex;
+  gap: 2px;
+  -webkit-app-region: no-drag;
+}
+
+.tb-btn {
+  width: 36px;
+  height: var(--titlebar-h);
+  border: none;
+  background: transparent;
+  color: var(--text-2);
+  font-size: 12px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-sm);
+  transition: background 0.12s, color 0.12s;
+}
+.tb-btn:hover { background: rgba(255,255,255,0.08); color: var(--text-1); }
+.tb-close:hover { background: #c42b1c !important; color: #fff !important; }

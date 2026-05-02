@@ -1,0 +1,65 @@
+{
+  "name": "overlay-settings",
+  "version": "1.0.0",
+  "description": "Settings UI for TopOverlay",
+  "main": "out/main/index.js",
+  "scripts": {
+    "dev": "electron-vite dev",
+    "build": "electron-vite build",
+    "start": "electron-vite preview",
+    "dist": "npm run build && electron-builder"
+  },
+  "dependencies": {
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@electron-toolkit/tsconfig": "^2.0.0",
+    "@types/react": "^18.3.1",
+    "@types/react-dom": "^18.3.1",
+    "@vitejs/plugin-react": "^4.3.0",
+    "electron": "^35.0.0",
+    "electron-builder": "^26.8.1",
+    "electron-vite": "^3.0.0",
+    "typescript": "^5.7.0"
+  },
+  "build": {
+    "appId": "com.topoverlay.app",
+    "productName": "TopOverlay",
+    "directories": {
+      "output": "../dist-installer"
+    },
+    "files": [
+      "out/**/*"
+    ],
+    "extraResources": [
+      {
+        "from": "../overlay/overlay_static.exe",
+        "to": "overlay.exe"
+      },
+      {
+        "from": "../characters",
+        "to": "characters",
+        "filter": ["**/*"]
+      },
+      {
+        "from": "../config.json",
+        "to": "config.json"
+      }
+    ],
+    "forceCodeSigning": false,
+    "win": {
+      "target": "nsis",
+      "requestedExecutionLevel": "asInvoker",
+      "signAndEditExecutable": false
+    },
+    "nsis": {
+      "oneClick": true,
+      "perMachine": false,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "TopOverlay",
+      "uninstallDisplayName": "TopOverlay"
+    }
+  }
+}
