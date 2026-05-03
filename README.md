@@ -9,8 +9,10 @@ A Windows desktop overlay with a configurable crosshair, screen border, text HUD
 - Configurable crosshair: color, length, gap, and thickness.
 - Configurable screen border: color and thickness.
 - Optional HUD with quick shortcut reminders.
-- Animated GIF character anchored to the bottom-right corner.
-- Settings app with character, display, and system controls.
+- Animated GIF character with configurable screen anchoring and fine-tuned offsets.
+- Per-character walking GIFs, with automatic horizontal mirroring when walking left.
+- Optional walking animation loop with configurable frequency, direction, and speed.
+- Settings app with character, display, animation, and system controls.
 - Shared configuration through `config.json`.
 - Optional user-level Windows autostart through the registry.
 - NSIS installer build through Electron Builder.
@@ -177,7 +179,20 @@ Example:
     "path": "characters\\frieren\\frieren.gif",
     "maxWidth": 260,
     "maxHeight": 260,
-    "margin": 28
+    "margin": 28,
+    "anchorX": "right",
+    "anchorY": "bottom",
+    "offsetX": 0,
+    "offsetY": 0
+  },
+  "walkPaths": {
+    "characters\\frieren\\frieren.gif": "characters\\frieren\\frieren-walk.gif"
+  },
+  "animation": {
+    "enabled": false,
+    "walkFrequency": 30,
+    "walkDirection": "both",
+    "walkSpeed": 150
   },
   "crosshair": {
     "enabled": true,
@@ -211,6 +226,14 @@ Main fields:
 - `character.path`: absolute path or path relative to the project/resources root.
 - `character.maxWidth` / `character.maxHeight`: maximum GIF size in pixels.
 - `character.margin`: distance from the bottom and right screen edges.
+- `character.anchorX`: horizontal anchor, one of `left`, `center`, or `right`.
+- `character.anchorY`: vertical anchor, one of `top`, `center`, or `bottom`.
+- `character.offsetX` / `character.offsetY`: pixel offsets from the selected anchor.
+- `walkPaths`: maps each idle character GIF path to its optional walking GIF path.
+- `animation.enabled`: enables or disables automatic walking cycles.
+- `animation.walkFrequency`: seconds between walking cycles.
+- `animation.walkDirection`: walking direction, one of `left`, `right`, or `both`.
+- `animation.walkSpeed`: movement speed in pixels per second.
 - `crosshair`: crosshair visibility, geometry, and color.
 - `border`: screen border visibility, thickness, and color.
 - `hud.enabled`: shows or hides the HUD text.
@@ -228,6 +251,47 @@ characters/
 ```
 
 The settings app automatically lists GIFs found there. You can also select an external GIF from the character page.
+
+Each character card has a menu button for walking animations:
+
+- `Set walk GIF`: assign a separate GIF used while the character walks.
+- `Change walk GIF`: replace an existing walking GIF.
+- `Remove walk GIF`: clear the walking GIF for that character.
+
+Cards with a configured walking GIF show a running badge.
+
+## Character Positioning
+
+The character position is controlled by an anchor plus optional offsets. The anchor can be any of the 9 screen positions:
+
+```text
+top-left      top-center      top-right
+center-left   center          center-right
+bottom-left   bottom-center   bottom-right
+```
+
+`anchorX` selects `left`, `center`, or `right`; `anchorY` selects `top`, `center`, or `bottom`. `offsetX` and `offsetY` then move the character from that anchor, which is useful for small layout adjustments without changing the anchor itself.
+
+In the settings app, the Animations page exposes this as a 3x3 anchor grid plus Offset X/Y sliders.
+
+## Walking Animation
+
+When walking animation is enabled, the overlay periodically starts a full walk cycle:
+
+```text
+IDLE -> WALK_OUT -> WALK_BACK -> IDLE
+```
+
+During `WALK_OUT`, the character moves from its anchor toward the selected screen edge. During `WALK_BACK`, it returns to the configured anchor. Movement is updated by the overlay timer at roughly 60 FPS for smooth motion.
+
+Walking behavior is controlled from the Animations page:
+
+- Enable or disable walking.
+- Set the frequency from 5 to 300 seconds.
+- Set movement speed in pixels per second.
+- Pick left, right, or alternating left/right direction.
+
+If a character has a configured walk GIF, that GIF is used during the walking phases. When the character walks left, the overlay mirrors the GIF horizontally, so a separate left-facing GIF is not required.
 
 ## Shortcuts
 
