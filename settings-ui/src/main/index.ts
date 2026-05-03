@@ -13,7 +13,18 @@ const defaultConfig = {
     path: 'characters\\frieren\\frieren.gif',
     maxWidth: 260,
     maxHeight: 260,
-    margin: 28
+    margin: 28,
+    anchorX: 'right',
+    anchorY: 'bottom',
+    offsetX: 0,
+    offsetY: 0
+  },
+  walkPaths: {} as Record<string, string>,
+  animation: {
+    enabled: false,
+    walkFrequency: 30,
+    walkDirection: 'both',
+    walkSpeed: 150
   },
   crosshair: {
     enabled: true,

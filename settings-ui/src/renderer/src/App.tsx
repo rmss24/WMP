@@ -4,6 +4,7 @@ import Sidebar from './components/Sidebar'
 import CharactersPage from './components/CharactersPage'
 import DisplayPage from './components/DisplayPage'
 import SystemPage from './components/SystemPage'
+import AnimationsPage from './components/AnimationsPage'
 import './App.css'
 
 export type Config = {
@@ -11,7 +12,24 @@ export type Config = {
   autoStart: boolean
   debugMode: boolean
   launchSettingsOnStart: boolean
-  character: { enabled: boolean; path: string; maxWidth: number; maxHeight: number; margin: number }
+  character: {
+    enabled: boolean
+    path: string
+    maxWidth: number
+    maxHeight: number
+    margin: number
+    anchorX: 'left' | 'center' | 'right'
+    anchorY: 'top' | 'center' | 'bottom'
+    offsetX: number
+    offsetY: number
+  }
+  walkPaths: Record<string, string>
+  animation: {
+    enabled: boolean
+    walkFrequency: number
+    walkDirection: 'left' | 'right' | 'both'
+    walkSpeed: number
+  }
   crosshair: { enabled: boolean; length: number; gap: number; thickness: number; color: string }
   border: { enabled: boolean; thickness: number; color: string }
   hud: { enabled: boolean; fontSize: number }
@@ -32,7 +50,7 @@ const api = (window as unknown as { api: {
   onConfigChanged: (cb: (cfg: Config) => void) => () => void
 }}).api
 
-type Page = 'characters' | 'display' | 'system'
+type Page = 'characters' | 'display' | 'animation' | 'system'
 
 export default function App() {
   const [config, setConfig] = useState<Config | null>(null)
@@ -85,6 +103,9 @@ export default function App() {
           )}
           {page === 'display' && (
             <DisplayPage config={config} update={updateConfig} />
+          )}
+          {page === 'animation' && (
+            <AnimationsPage config={config} update={updateConfig} api={api} />
           )}
           {page === 'system' && (
             <SystemPage config={config} update={updateConfig} api={api} />

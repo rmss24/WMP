@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { Config } from '../App'
 import './Page.css'
 
@@ -17,10 +17,23 @@ type Props = {
 
 export default function CharactersPage({ config, update, api }: Props) {
   const [chars, setChars] = useState<Char[]>([])
+  const [menuOpen, setMenuOpen] = useState<string | null>(null)
+  const menuRef = useRef<HTMLDivElement | null>(null)
 
   const reload = () => api.getCharacters().then(setChars)
-
   useEffect(() => { reload() }, [])
+
+  // Close menu on outside click
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node))
+        setMenuOpen(null)
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [])
+
+  const normPath = (p: string) => p.replace(/\//g, '\\').toLowerCase()
 
   const selectChar = (path: string) =>
     update(prev => ({ ...prev, character: { ...prev.character, path } }))
@@ -33,7 +46,24 @@ export default function CharactersPage({ config, update, api }: Props) {
     }
   }
 
-  const normPath = (p: string) => p.replace(/\//g, '\\').toLowerCase()
+  const setWalkGif = async (charPath: string) => {
+    setMenuOpen(null)
+    const path = await api.selectGif()
+    if (!path) return
+    update(prev => ({
+      ...prev,
+      walkPaths: { ...prev.walkPaths, [charPath]: path }
+    }))
+  }
+
+  const clearWalkGif = (charPath: string) => {
+    setMenuOpen(null)
+    update(prev => {
+      const next = { ...prev.walkPaths }
+      delete next[charPath]
+      return { ...prev, walkPaths: next }
+    })
+  }
 
   return (
     <div className="page">
@@ -82,18 +112,52 @@ export default function CharactersPage({ config, update, api }: Props) {
         <div className="char-grid">
           {chars.map(ch => {
             const active = normPath(config.character.path) === normPath(ch.path)
+            const hasWalk = !!config.walkPaths?.[ch.path]
+            const isMenuOpen = menuOpen === ch.path
             return (
-              <button
-                key={ch.path}
-                className={`char-card ${active ? 'char-card--active' : ''}`}
-                onClick={() => selectChar(ch.path)}
-              >
-                <div className="char-preview">
-                  <img src={ch.previewUrl} alt={ch.name} />
-                </div>
-                <div className="char-name">{ch.name}</div>
-                {active && <div className="char-badge">✓ Attivo</div>}
-              </button>
+              <div key={ch.path} style={{ position: 'relative' }}>
+                <button
+                  className={`char-card ${active ? 'char-card--active' : ''}`}
+                  onClick={() => selectChar(ch.path)}
+                >
+                  <div className="char-preview">
+                    <img src={ch.previewUrl} alt={ch.name} />
+                  </div>
+                  <div className="char-name">{ch.name}</div>
+                  {active && <div className="char-badge">✓ Attivo</div>}
+                  {hasWalk && (
+                    <div className="char-walk-badge" title="Ha animazione camminata">🏃</div>
+                  )}
+                </button>
+                {/* Three-dots menu button */}
+                <button
+                  className="char-menu-btn"
+                  onClick={e => {
+                    e.stopPropagation()
+                    setMenuOpen(isMenuOpen ? null : ch.path)
+                  }}
+                  title="Opzioni"
+                >
+                  ⋯
+                </button>
+                {isMenuOpen && (
+                  <div className="char-menu" ref={menuRef}>
+                    {!active && (
+                      <button className="char-menu-item" onClick={() => { selectChar(ch.path); setMenuOpen(null) }}>
+                        ✓ Seleziona
+                      </button>
+                    )}
+                    <button className="char-menu-item" onClick={() => setWalkGif(ch.path)}>
+                      🏃 {hasWalk ? 'Cambia walk GIF' : 'Imposta walk GIF'}
+                    </button>
+                    {hasWalk && (
+                      <button className="char-menu-item char-menu-item--danger" onClick={() => clearWalkGif(ch.path)}>
+                        ✕ Rimuovi walk GIF
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
             )
           })}
         </div>

@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <string>
 #include <vector>
+#include <map>
 #include <fstream>
 #include "json.hpp"
 
@@ -18,10 +19,28 @@
 using json = nlohmann::json;
 
 struct Config {
-    bool   debugMode            = false;
-    bool   launchSettingsOnStart = true;
+    bool debugMode             = false;
+    bool launchSettingsOnStart = true;
 
-    struct { bool enabled = true; std::wstring path = L""; int maxW = 260; int maxH = 260; int margin = 28; } character;
+    struct {
+        bool         enabled  = true;
+        std::wstring path     = L"";
+        int          maxW     = 260;
+        int          maxH     = 260;
+        int          margin   = 28;
+        std::string  anchorX  = "right";   // "left" | "center" | "right"
+        std::string  anchorY  = "bottom";  // "top"  | "center" | "bottom"
+        int          offsetX  = 0;
+        int          offsetY  = 0;
+    } character;
+
+    struct {
+        bool enabled        = false;
+        int  walkFrequency  = 30;       // seconds between walks
+        std::string walkDirection = "both"; // "left" | "right" | "both"
+        int  walkSpeed      = 150;      // pixels per second
+    } animation;
+
     struct { bool enabled = true; int len = 18; int gap = 5; int thick = 2; COLORREF color = RGB(0,255,80); } crosshair;
     struct { bool enabled = true; int thick = 3; COLORREF color = RGB(255,50,50); } border;
     struct { bool enabled = true; int fontSize = 16; } hud;
@@ -31,22 +50,45 @@ struct Config {
 static Config g_cfg;
 static std::wstring g_configPath;
 static FILETIME g_configLastWrite = {};
+// charPath (as stored in config) → walk GIF path
+static std::map<std::wstring, std::wstring> g_walkPaths;
 
-static const wchar_t CLASS_NAME[] = L"WMP";
+static const wchar_t CLASS_NAME[]    = L"WMP";
 static const COLORREF TRANSPARENT_KEY = RGB(1, 1, 1);
-static const UINT_PTR TIMER_GIF    = 10;
-static const UINT_PTR TIMER_WATCH  = 11;
-static const UINT     WM_RELOAD_CFG = WM_APP + 1;
+static const UINT_PTR TIMER_GIF          = 10;
+static const UINT_PTR TIMER_WATCH        = 11;
+static const UINT_PTR TIMER_GIF_WALK     = 12;
+static const UINT_PTR TIMER_WALK_MOVE    = 13;
+static const UINT_PTR TIMER_WALK_TRIGGER = 14;
+static const UINT     WM_RELOAD_CFG      = WM_APP + 1;
 
-static HWND  g_hwnd        = NULL;
-static bool  g_clickThrough = true;
+static HWND  g_hwnd              = NULL;
+static bool  g_clickThrough      = true;
 static bool  g_screenOverlayActive = true;
-static ULONG_PTR g_gdiplusToken = 0;
-static Gdiplus::Image* g_gif = NULL;
-static GUID g_gifFrameDim = {};
-static UINT g_gifFrameCount = 0;
-static UINT g_gifFrameIndex = 0;
+static ULONG_PTR g_gdiplusToken  = 0;
+
+// Static (idle) GIF
+static Gdiplus::Image* g_gif          = NULL;
+static GUID  g_gifFrameDim            = {};
+static UINT  g_gifFrameCount          = 0;
+static UINT  g_gifFrameIndex          = 0;
 static std::vector<UINT> g_gifDelaysMs;
+
+// Walk GIF
+static Gdiplus::Image* g_gifWalk          = NULL;
+static GUID  g_gifWalkFrameDim            = {};
+static UINT  g_gifWalkFrameCount          = 0;
+static UINT  g_gifWalkFrameIndex          = 0;
+static std::vector<UINT> g_gifWalkDelaysMs;
+
+// Character position & walk state
+static float g_charX        = -1.f;  // <0 = recompute from anchor
+static float g_charY        = -1.f;
+static float g_anchorX_px   = 0.f;
+static float g_anchorY_px   = 0.f;
+static int   g_walkPhase    = 0;     // 0=idle, 1=walk_out, 2=walk_back
+static int   g_walkDir      = -1;   // +1=right, -1=left
+static int   g_walkAlternate = 0;   // tracks direction alternation for "both"
 
 enum HotkeyID {
     HK_TOGGLE_VISIBLE      = 1,
@@ -87,6 +129,15 @@ static std::wstring Utf8ToWide(const std::string& s)
     return w;
 }
 
+static std::string WideToUtf8(const std::wstring& w)
+{
+    if (w.empty()) return "";
+    int n = WideCharToMultiByte(CP_UTF8, 0, w.c_str(), -1, NULL, 0, NULL, NULL);
+    std::string s(n - 1, '\0');
+    WideCharToMultiByte(CP_UTF8, 0, w.c_str(), -1, s.data(), n, NULL, NULL);
+    return s;
+}
+
 static std::wstring FindConfigPath()
 {
     wchar_t mod[MAX_PATH] = {};
@@ -97,10 +148,10 @@ static std::wstring FindConfigPath()
     GetCurrentDirectoryW(MAX_PATH, cwd);
 
     std::vector<std::wstring> candidates = {
-        std::wstring(cwd)    + L"\\config.json",
-        moduleDir            + L"\\config.json",
-        moduleDir            + L"\\..\\config.json",
-        moduleDir            + L"\\..\\..\\config.json",
+        std::wstring(cwd) + L"\\config.json",
+        moduleDir         + L"\\config.json",
+        moduleDir         + L"\\..\\config.json",
+        moduleDir         + L"\\..\\..\\config.json",
     };
     for (const auto& c : candidates)
         if (FileExists(c)) return c;
@@ -125,7 +176,7 @@ static void LoadConfig()
         auto geti = [&](const json& obj, const char* k, int def) {
             return obj.contains(k) && obj[k].is_number() ? obj[k].get<int>() : def;
         };
-        auto gets = [&](const json& obj, const char* k, std::string def) {
+        auto gets = [&](const json& obj, const char* k, std::string def) -> std::string {
             return obj.contains(k) && obj[k].is_string() ? obj[k].get<std::string>() : def;
         };
 
@@ -139,7 +190,26 @@ static void LoadConfig()
             g_cfg.character.maxW    = geti(c, "maxWidth",  260);
             g_cfg.character.maxH    = geti(c, "maxHeight", 260);
             g_cfg.character.margin  = geti(c, "margin",    28);
+            g_cfg.character.anchorX = gets(c, "anchorX", "right");
+            g_cfg.character.anchorY = gets(c, "anchorY", "bottom");
+            g_cfg.character.offsetX = geti(c, "offsetX", 0);
+            g_cfg.character.offsetY = geti(c, "offsetY", 0);
         }
+
+        if (j.contains("walkPaths") && j["walkPaths"].is_object()) {
+            g_walkPaths.clear();
+            for (auto& [k, v] : j["walkPaths"].items())
+                if (v.is_string()) g_walkPaths[Utf8ToWide(k)] = Utf8ToWide(v.get<std::string>());
+        }
+
+        if (j.contains("animation") && j["animation"].is_object()) {
+            auto& a = j["animation"];
+            g_cfg.animation.enabled       = getb(a, "enabled",       false);
+            g_cfg.animation.walkFrequency = geti(a, "walkFrequency", 30);
+            g_cfg.animation.walkDirection = gets(a, "walkDirection", "both");
+            g_cfg.animation.walkSpeed     = geti(a, "walkSpeed",     150);
+        }
+
         if (j.contains("crosshair") && j["crosshair"].is_object()) {
             auto& c = j["crosshair"];
             g_cfg.crosshair.enabled = getb(c, "enabled",   true);
@@ -161,7 +231,7 @@ static void LoadConfig()
         }
         if (j.contains("overlay") && j["overlay"].is_object()) {
             auto& o = j["overlay"];
-            g_cfg.overlay.visible     = getb(o, "visible",     true);
+            g_cfg.overlay.visible      = getb(o, "visible",      true);
             g_cfg.overlay.clickThrough = getb(o, "clickThrough", true);
         }
     } catch (...) {}
@@ -176,12 +246,14 @@ static void SaveOverlayState()
             std::ifstream f(g_configPath.c_str());
             if (f.is_open()) f >> j;
         }
-        j["overlay"]["visible"]     = g_screenOverlayActive;
+        j["overlay"]["visible"]      = g_screenOverlayActive;
         j["overlay"]["clickThrough"] = g_clickThrough;
         std::ofstream f(g_configPath.c_str());
         if (f.is_open()) f << j.dump(2);
     } catch (...) {}
 }
+
+// ── GIF loading ─────────────────────────────────────────────────────────────
 
 static std::wstring FindGifPath()
 {
@@ -198,6 +270,32 @@ static std::wstring FindGifPath()
         if (FileExists(p)) return p;
     }
     return L"";
+}
+
+static std::wstring FindGifWalkPath()
+{
+    auto it = g_walkPaths.find(g_cfg.character.path);
+    if (it == g_walkPaths.end()) return L"";
+    const std::wstring& wp = it->second;
+    if (wp.empty()) return L"";
+    if (FileExists(wp)) return wp;
+    std::wstring base = DirName(g_configPath) + L"\\" + wp;
+    if (FileExists(base)) return base;
+    return L"";
+}
+
+static void LoadFrameDelays(Gdiplus::Image* img, UINT frameCount, std::vector<UINT>& delays)
+{
+    delays.assign(frameCount, 100);
+    UINT sz = img->GetPropertyItemSize(PropertyTagFrameDelay);
+    if (!sz) return;
+    std::vector<BYTE> buf(sz);
+    auto* item = (Gdiplus::PropertyItem*)buf.data();
+    if (img->GetPropertyItem(PropertyTagFrameDelay, sz, item) != Gdiplus::Ok) return;
+    UINT cnt = item->length / sizeof(UINT);
+    UINT* raw = (UINT*)item->value;
+    for (UINT i = 0; i < frameCount && i < cnt; ++i)
+        delays[i] = std::max(20u, raw[i] * 10u);
 }
 
 static void LoadGif()
@@ -218,79 +316,121 @@ static void LoadGif()
     g_gif->GetFrameDimensionsList(dims.data(), dimCount);
     g_gifFrameDim   = dims[0];
     g_gifFrameCount = g_gif->GetFrameCount(&g_gifFrameDim);
-    g_gifDelaysMs.assign(g_gifFrameCount, 100);
-
-    UINT delaySize = g_gif->GetPropertyItemSize(PropertyTagFrameDelay);
-    if (delaySize > 0) {
-        std::vector<BYTE> buf(delaySize);
-        Gdiplus::PropertyItem* item = (Gdiplus::PropertyItem*)buf.data();
-        if (g_gif->GetPropertyItem(PropertyTagFrameDelay, delaySize, item) == Gdiplus::Ok) {
-            UINT cnt = item->length / sizeof(UINT);
-            UINT* delays = (UINT*)item->value;
-            for (UINT i = 0; i < g_gifFrameCount && i < cnt; ++i)
-                g_gifDelaysMs[i] = std::max(20u, delays[i] * 10u);
-        }
-    }
+    LoadFrameDelays(g_gif, g_gifFrameCount, g_gifDelaysMs);
 }
 
-static void ApplyClickThrough(bool enable)
+static void LoadGifWalk()
 {
-    LONG_PTR ex = GetWindowLongPtr(g_hwnd, GWL_EXSTYLE);
-    if (enable) ex |=  WS_EX_TRANSPARENT;
-    else        ex &= ~WS_EX_TRANSPARENT;
-    SetWindowLongPtr(g_hwnd, GWL_EXSTYLE, ex);
-    SetWindowPos(g_hwnd, HWND_TOPMOST, 0, 0, 0, 0,
-        SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_FRAMECHANGED);
-    g_clickThrough = enable;
+    delete g_gifWalk; g_gifWalk = NULL;
+    g_gifWalkFrameCount = 0; g_gifWalkFrameIndex = 0; g_gifWalkDelaysMs.clear();
+
+    std::wstring path = FindGifWalkPath();
+    if (path.empty()) return;
+
+    g_gifWalk = Gdiplus::Image::FromFile(path.c_str(), FALSE);
+    if (!g_gifWalk || g_gifWalk->GetLastStatus() != Gdiplus::Ok) { delete g_gifWalk; g_gifWalk = NULL; return; }
+
+    UINT dimCount = g_gifWalk->GetFrameDimensionsCount();
+    if (!dimCount) return;
+    std::vector<GUID> dims(dimCount);
+    g_gifWalk->GetFrameDimensionsList(dims.data(), dimCount);
+    g_gifWalkFrameDim   = dims[0];
+    g_gifWalkFrameCount = g_gifWalk->GetFrameCount(&g_gifWalkFrameDim);
+    LoadFrameDelays(g_gifWalk, g_gifWalkFrameCount, g_gifWalkDelaysMs);
 }
 
-static void ApplyConfig()
+// ── Position & animation ─────────────────────────────────────────────────────
+
+static bool ComputeCharSize(int& dw, int& dh)
 {
-    g_screenOverlayActive = g_cfg.overlay.visible;
-    ApplyClickThrough(g_cfg.overlay.clickThrough);
-    LoadGif();
-    if (g_hwnd) {
-        if (g_gif && g_gifFrameCount > 1)
-            SetTimer(g_hwnd, TIMER_GIF, g_gifDelaysMs[0], NULL);
-        else
-            KillTimer(g_hwnd, TIMER_GIF);
-        InvalidateRect(g_hwnd, NULL, FALSE);
-    }
+    Gdiplus::Image* img = (g_walkPhase > 0 && g_gifWalk) ? g_gifWalk : g_gif;
+    if (!img) return false;
+    UINT sw = img->GetWidth(), sh = img->GetHeight();
+    if (!sw || !sh) return false;
+    double scale = std::min((double)g_cfg.character.maxW / sw, (double)g_cfg.character.maxH / sh);
+    dw = std::max(1, (int)(sw * scale));
+    dh = std::max(1, (int)(sh * scale));
+    return true;
 }
 
-static void LaunchSettingsUI()
+static void ComputeAnchorPos(int sw, int sh, int dw, int dh)
 {
-    std::wstring configDir = DirName(g_configPath);
+    int m = g_cfg.character.margin;
+    if      (g_cfg.character.anchorX == "left")   g_anchorX_px = (float)(m + g_cfg.character.offsetX);
+    else if (g_cfg.character.anchorX == "center")  g_anchorX_px = (float)((sw - dw) / 2 + g_cfg.character.offsetX);
+    else                                            g_anchorX_px = (float)(sw - dw - m + g_cfg.character.offsetX);
 
-    std::vector<std::wstring> candidates = {
-        configDir + L"\\settings-ui.exe",
-        configDir + L"\\launch-settings.bat",
-    };
-    for (const auto& p : candidates) {
-        if (FileExists(p)) {
-            ShellExecuteW(NULL, L"open", p.c_str(), NULL, configDir.c_str(), SW_SHOW);
-            return;
-        }
-    }
-    std::wstring bat = configDir + L"\\launch-settings.bat";
-    ShellExecuteW(NULL, L"open", bat.c_str(), NULL, configDir.c_str(), SW_SHOW);
+    if      (g_cfg.character.anchorY == "top")    g_anchorY_px = (float)(m + g_cfg.character.offsetY);
+    else if (g_cfg.character.anchorY == "center")  g_anchorY_px = (float)((sh - dh) / 2 + g_cfg.character.offsetY);
+    else                                            g_anchorY_px = (float)(sh - dh - m + g_cfg.character.offsetY);
+
+    if (g_charX < 0) g_charX = g_anchorX_px;
+    if (g_charY < 0) g_charY = g_anchorY_px;
 }
+
+static void StopWalk()
+{
+    g_walkPhase = 0;
+    KillTimer(g_hwnd, TIMER_GIF_WALK);
+    KillTimer(g_hwnd, TIMER_WALK_MOVE);
+    g_gifWalkFrameIndex = 0;
+    // Snap back to anchor
+    g_charX = g_anchorX_px;
+    g_charY = g_anchorY_px;
+    InvalidateRect(g_hwnd, NULL, FALSE);
+}
+
+static void StartWalk()
+{
+    if (!g_cfg.animation.enabled || !g_hwnd || g_walkPhase != 0) return;
+
+    if      (g_cfg.animation.walkDirection == "left")  g_walkDir = -1;
+    else if (g_cfg.animation.walkDirection == "right") g_walkDir = +1;
+    else {
+        g_walkDir = ((g_walkAlternate & 1) == 0) ? -1 : +1;
+        g_walkAlternate++;
+    }
+
+    g_walkPhase = 1;
+    g_gifWalkFrameIndex = 0;
+
+    if (g_gifWalk && g_gifWalkFrameCount > 1)
+        SetTimer(g_hwnd, TIMER_GIF_WALK, g_gifWalkDelaysMs[0], NULL);
+
+    SetTimer(g_hwnd, TIMER_WALK_MOVE, 16, NULL);
+}
+
+// ── Drawing ──────────────────────────────────────────────────────────────────
 
 static void DrawGif(HDC hdc, const RECT& rc)
 {
-    if (!g_gif || !g_cfg.character.enabled) return;
+    if (!g_cfg.character.enabled) return;
+
+    int dw, dh;
+    if (!ComputeCharSize(dw, dh)) return;
+
+    if (g_charX < 0 || g_charY < 0)
+        ComputeAnchorPos(rc.right, rc.bottom, dw, dh);
+
+    Gdiplus::Image* img = (g_walkPhase > 0 && g_gifWalk) ? g_gifWalk : g_gif;
+    if (!img) return;
+
+    if (g_walkPhase > 0 && g_gifWalk)
+        img->SelectActiveFrame(&g_gifWalkFrameDim, g_gifWalkFrameIndex);
+    else if (g_gif)
+        g_gif->SelectActiveFrame(&g_gifFrameDim, g_gifFrameIndex);
+
     Gdiplus::Graphics g(hdc);
     g.SetInterpolationMode(Gdiplus::InterpolationModeHighQualityBicubic);
     g.SetPixelOffsetMode(Gdiplus::PixelOffsetModeHighQuality);
-    UINT sw = g_gif->GetWidth(), sh = g_gif->GetHeight();
-    if (!sw || !sh) return;
-    double scale = std::min((double)g_cfg.character.maxW / sw, (double)g_cfg.character.maxH / sh);
-    int dw = std::max(1, (int)(sw * scale));
-    int dh = std::max(1, (int)(sh * scale));
-    int x  = rc.right  - dw - g_cfg.character.margin;
-    int y  = rc.bottom - dh - g_cfg.character.margin;
-    g_gif->SelectActiveFrame(&g_gifFrameDim, g_gifFrameIndex);
-    g.DrawImage(g_gif, x, y, dw, dh);
+
+    float fx = g_charX, fy = g_charY;
+    if (g_walkPhase > 0 && g_walkDir < 0) {
+        // Mirror horizontally when walking left
+        g.DrawImage(img, Gdiplus::RectF(fx + dw, fy, (float)-dw, (float)dh));
+    } else {
+        g.DrawImage(img, Gdiplus::RectF(fx, fy, (float)dw, (float)dh));
+    }
 }
 
 static void DrawCrosshair(HDC hdc, int cx, int cy)
@@ -334,6 +474,66 @@ static void DrawBorder(HDC hdc, RECT* rc)
 
     SelectObject(hdc, ob); SelectObject(hdc, old);
     DeleteObject(pen); DeleteObject(accent);
+}
+
+// ── Window proc ──────────────────────────────────────────────────────────────
+
+static void ApplyClickThrough(bool enable)
+{
+    LONG_PTR ex = GetWindowLongPtr(g_hwnd, GWL_EXSTYLE);
+    if (enable) ex |=  WS_EX_TRANSPARENT;
+    else        ex &= ~WS_EX_TRANSPARENT;
+    SetWindowLongPtr(g_hwnd, GWL_EXSTYLE, ex);
+    SetWindowPos(g_hwnd, HWND_TOPMOST, 0, 0, 0, 0,
+        SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_FRAMECHANGED);
+    g_clickThrough = enable;
+}
+
+static void LaunchSettingsUI()
+{
+    std::wstring configDir = DirName(g_configPath);
+    std::vector<std::wstring> candidates = {
+        configDir + L"\\settings-ui.exe",
+        configDir + L"\\launch-settings.bat",
+    };
+    for (const auto& p : candidates) {
+        if (FileExists(p)) {
+            ShellExecuteW(NULL, L"open", p.c_str(), NULL, configDir.c_str(), SW_SHOW);
+            return;
+        }
+    }
+    ShellExecuteW(NULL, L"open", (configDir + L"\\launch-settings.bat").c_str(),
+                  NULL, configDir.c_str(), SW_SHOW);
+}
+
+static void ApplyConfig()
+{
+    g_screenOverlayActive = g_cfg.overlay.visible;
+    ApplyClickThrough(g_cfg.overlay.clickThrough);
+    LoadGif();
+    LoadGifWalk();
+
+    // Reset position so anchor gets recomputed
+    g_charX = -1.f;
+    g_charY = -1.f;
+
+    if (g_hwnd) {
+        KillTimer(g_hwnd, TIMER_GIF_WALK);
+        KillTimer(g_hwnd, TIMER_WALK_MOVE);
+        KillTimer(g_hwnd, TIMER_WALK_TRIGGER);
+        g_walkPhase = 0;
+
+        if (g_gif && g_gifFrameCount > 1)
+            SetTimer(g_hwnd, TIMER_GIF, g_gifDelaysMs[0], NULL);
+        else
+            KillTimer(g_hwnd, TIMER_GIF);
+
+        if (g_cfg.animation.enabled && g_cfg.animation.walkFrequency > 0)
+            SetTimer(g_hwnd, TIMER_WALK_TRIGGER,
+                     (UINT)(g_cfg.animation.walkFrequency * 1000), NULL);
+
+        InvalidateRect(g_hwnd, NULL, FALSE);
+    }
 }
 
 LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
@@ -419,26 +619,64 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
         break;
 
     case WM_TIMER:
+        // Static GIF frame advance
         if (wParam == TIMER_GIF && g_gif && g_gifFrameCount > 1) {
             g_gifFrameIndex = (g_gifFrameIndex + 1) % g_gifFrameCount;
             SetTimer(hwnd, TIMER_GIF, g_gifDelaysMs[g_gifFrameIndex], NULL);
             InvalidateRect(hwnd, NULL, FALSE);
         }
+        // Walk GIF frame advance
+        if (wParam == TIMER_GIF_WALK && g_gifWalk && g_gifWalkFrameCount > 1) {
+            g_gifWalkFrameIndex = (g_gifWalkFrameIndex + 1) % g_gifWalkFrameCount;
+            SetTimer(hwnd, TIMER_GIF_WALK, g_gifWalkDelaysMs[g_gifWalkFrameIndex], NULL);
+            InvalidateRect(hwnd, NULL, FALSE);
+        }
+        // Walk movement (16ms ~60fps)
+        if (wParam == TIMER_WALK_MOVE) {
+            int dw, dh;
+            if (ComputeCharSize(dw, dh)) {
+                int sw = GetSystemMetrics(SM_CXSCREEN);
+                int m  = g_cfg.character.margin;
+                float speed = (float)g_cfg.animation.walkSpeed * 16.f / 1000.f;
+                g_charX += (float)g_walkDir * speed;
+                float leftEdge  = (float)m;
+                float rightEdge = (float)(sw - dw - m);
+                if (g_walkPhase == 1) {
+                    bool hitEdge = (g_walkDir > 0 && g_charX >= rightEdge) ||
+                                   (g_walkDir < 0 && g_charX <= leftEdge);
+                    if (hitEdge) {
+                        g_charX     = (g_walkDir > 0) ? rightEdge : leftEdge;
+                        g_walkDir   = -g_walkDir;
+                        g_walkPhase = 2;
+                    }
+                } else if (g_walkPhase == 2) {
+                    bool reachedAnchor =
+                        (g_walkDir > 0 && g_charX >= g_anchorX_px) ||
+                        (g_walkDir < 0 && g_charX <= g_anchorX_px);
+                    if (reachedAnchor) { StopWalk(); break; }
+                }
+                InvalidateRect(hwnd, NULL, FALSE);
+            }
+        }
+        // Walk trigger: start a new walk cycle
+        if (wParam == TIMER_WALK_TRIGGER && g_walkPhase == 0)
+            StartWalk();
+        // Keep window on top + check config changes
         if (wParam == TIMER_WATCH) {
             SetWindowPos(g_hwnd, HWND_TOPMOST, 0, 0, 0, 0,
                 SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
-        }
-        if (wParam == TIMER_WATCH && !g_configPath.empty()) {
-            HANDLE h = CreateFileW(g_configPath.c_str(), GENERIC_READ,
-                FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, OPEN_EXISTING, 0, NULL);
-            if (h != INVALID_HANDLE_VALUE) {
-                FILETIME ft = {};
-                GetFileTime(h, NULL, NULL, &ft);
-                CloseHandle(h);
-                if (CompareFileTime(&ft, &g_configLastWrite) != 0) {
-                    g_configLastWrite = ft;
-                    LoadConfig();
-                    ApplyConfig();
+            if (!g_configPath.empty()) {
+                HANDLE h = CreateFileW(g_configPath.c_str(), GENERIC_READ,
+                    FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, OPEN_EXISTING, 0, NULL);
+                if (h != INVALID_HANDLE_VALUE) {
+                    FILETIME ft = {};
+                    GetFileTime(h, NULL, NULL, &ft);
+                    CloseHandle(h);
+                    if (CompareFileTime(&ft, &g_configLastWrite) != 0) {
+                        g_configLastWrite = ft;
+                        LoadConfig();
+                        ApplyConfig();
+                    }
                 }
             }
         }
@@ -452,6 +690,9 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
     case WM_DESTROY:
         KillTimer(hwnd, TIMER_GIF);
         KillTimer(hwnd, TIMER_WATCH);
+        KillTimer(hwnd, TIMER_GIF_WALK);
+        KillTimer(hwnd, TIMER_WALK_MOVE);
+        KillTimer(hwnd, TIMER_WALK_TRIGGER);
         PostQuitMessage(0);
         break;
 
@@ -461,6 +702,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
     return 0;
 }
 
+// ── Entry point ───────────────────────────────────────────────────────────────
 
 int WINAPI wWinMain(HINSTANCE hInst, HINSTANCE, PWSTR lpCmdLine, int)
 {
@@ -482,10 +724,10 @@ int WINAPI wWinMain(HINSTANCE hInst, HINSTANCE, PWSTR lpCmdLine, int)
 
     LoadConfig();
 
-    WNDCLASSEX wc   = {};
-    wc.cbSize       = sizeof(wc);
-    wc.lpfnWndProc  = WndProc;
-    wc.hInstance    = hInst;
+    WNDCLASSEX wc    = {};
+    wc.cbSize        = sizeof(wc);
+    wc.lpfnWndProc   = WndProc;
+    wc.hInstance     = hInst;
     wc.lpszClassName = CLASS_NAME;
     wc.hbrBackground = (HBRUSH)GetStockObject(BLACK_BRUSH);
     RegisterClassExW(&wc);
@@ -516,18 +758,15 @@ int WINAPI wWinMain(HINSTANCE hInst, HINSTANCE, PWSTR lpCmdLine, int)
     if (!noUI && g_cfg.launchSettingsOnStart)
         LaunchSettingsUI();
 
-    MSG msg;
-    while (GetMessage(&msg, NULL, 0, 0)) {
-        TranslateMessage(&msg);
-        DispatchMessage(&msg);
+    MSG m;
+    while (GetMessageW(&m, NULL, 0, 0)) {
+        TranslateMessage(&m);
+        DispatchMessageW(&m);
     }
 
-    UnregisterHotKey(g_hwnd, HK_TOGGLE_VISIBLE);
-    UnregisterHotKey(g_hwnd, HK_TOGGLE_CLICKTHROUGH);
-    UnregisterHotKey(g_hwnd, HK_EXIT);
-    UnregisterHotKey(g_hwnd, HK_OPEN_SETTINGS);
-    delete g_gif; g_gif = NULL;
-    CloseHandle(mutex);
+    delete g_gif;
+    delete g_gifWalk;
     Gdiplus::GdiplusShutdown(g_gdiplusToken);
-    return (int)msg.wParam;
+    CloseHandle(mutex);
+    return 0;
 }

@@ -1,10 +1,11 @@
 import './Sidebar.css'
 
-type Page = 'characters' | 'display' | 'system'
+type Page = 'characters' | 'display' | 'animation' | 'system'
 
 const NAV = [
   { id: 'characters' as Page, icon: '🎭', label: 'Personaggi' },
   { id: 'display'    as Page, icon: '🎯', label: 'Display'     },
+  { id: 'animation'  as Page, icon: '🏃', label: 'Animazioni'  },
   { id: 'system'     as Page, icon: '⚙️', label: 'Sistema'     },
 ]
 

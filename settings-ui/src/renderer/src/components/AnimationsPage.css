@@ -1,0 +1,80 @@
+/* Anchor grid - 3x3 position picker */
+.anchor-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 52px);
+  gap: 6px;
+  margin-top: 12px;
+}
+
+.anchor-cell {
+  width: 52px;
+  height: 52px;
+  border-radius: 10px;
+  border: 1.5px solid var(--border);
+  background: var(--bg-card);
+  color: var(--text-secondary);
+  font-size: 20px;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.anchor-cell:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+  border-color: var(--accent);
+}
+
+.anchor-cell--active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+/* Walk section disabled state */
+.anim-fields--disabled {
+  opacity: 0.45;
+  pointer-events: none;
+}
+
+/* Direction button group */
+.dir-group {
+  display: flex;
+  gap: 8px;
+}
+
+.dir-btn {
+  flex: 1;
+  padding: 8px 0;
+  border-radius: 8px;
+  border: 1.5px solid var(--border);
+  background: var(--bg-card);
+  color: var(--text-secondary);
+  font-size: 13px;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+
+.dir-btn:hover:not(:disabled) {
+  background: var(--bg-hover);
+  color: var(--text);
+  border-color: var(--accent);
+}
+
+.dir-btn--active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+.dir-btn:disabled {
+  cursor: default;
+}
+
+.section-hint {
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin-top: 4px;
+}
