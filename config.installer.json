@@ -1,0 +1,32 @@
+{
+  "version": 1,
+  "debugMode": false,
+  "launchSettingsOnStart": true,
+  "character": {
+    "enabled": true,
+    "path": "characters\\frieren\\frieren.gif",
+    "maxWidth": 260,
+    "maxHeight": 260,
+    "margin": 28
+  },
+  "crosshair": {
+    "enabled": true,
+    "length": 18,
+    "gap": 5,
+    "thickness": 2,
+    "color": "#00FF50"
+  },
+  "border": {
+    "enabled": true,
+    "thickness": 3,
+    "color": "#FF3232"
+  },
+  "hud": {
+    "enabled": true,
+    "fontSize": 16
+  },
+  "overlay": {
+    "visible": true,
+    "clickThrough": true
+  }
+}

@@ -186,11 +186,11 @@ ipcMain.handle('set-autostart', (_, enable: boolean) => {
     const overlayExe = getOverlayExePath()
     if (enable) {
       execSync(
-        `reg add "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run" /v TopOverlay /t REG_SZ /d "${overlayExe}" /f`
+        `reg add "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run" /v WMP /t REG_SZ /d "${overlayExe}" /f`
       )
     } else {
       execSync(
-        `reg delete "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run" /v TopOverlay /f`
+        `reg delete "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run" /v WMP /f`
       )
     }
     return true
@@ -202,7 +202,7 @@ ipcMain.handle('set-autostart', (_, enable: boolean) => {
 ipcMain.handle('get-autostart', () => {
   try {
     execSync(
-      `reg query "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run" /v TopOverlay`
+      `reg query "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run" /v WMP`
     )
     return true
   } catch {

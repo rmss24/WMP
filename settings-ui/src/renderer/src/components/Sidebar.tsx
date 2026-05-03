@@ -14,7 +14,7 @@ export default function Sidebar({ page, onNavigate }: Props) {
   return (
     <nav className="sidebar">
       <div className="sidebar-top">
-        <div className="sidebar-brand">TopOverlay</div>
+        <div className="sidebar-brand">WMP</div>
         <div className="sidebar-version">v1.0</div>
       </div>
       <ul className="sidebar-nav">

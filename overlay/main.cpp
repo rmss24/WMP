@@ -8,8 +8,6 @@
 #include <string>
 #include <vector>
 #include <fstream>
-#include <atomic>
-#include <thread>
 #include "json.hpp"
 
 #pragma comment(lib, "user32.lib")
@@ -32,9 +30,9 @@ struct Config {
 
 static Config g_cfg;
 static std::wstring g_configPath;
-static std::atomic<bool> g_configDirty{false};
+static FILETIME g_configLastWrite = {};
 
-static const wchar_t CLASS_NAME[] = L"TopOverlay";
+static const wchar_t CLASS_NAME[] = L"WMP";
 static const COLORREF TRANSPARENT_KEY = RGB(1, 1, 1);
 static const UINT_PTR TIMER_GIF    = 10;
 static const UINT_PTR TIMER_WATCH  = 11;
@@ -241,6 +239,8 @@ static void ApplyClickThrough(bool enable)
     if (enable) ex |=  WS_EX_TRANSPARENT;
     else        ex &= ~WS_EX_TRANSPARENT;
     SetWindowLongPtr(g_hwnd, GWL_EXSTYLE, ex);
+    SetWindowPos(g_hwnd, HWND_TOPMOST, 0, 0, 0, 0,
+        SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_FRAMECHANGED);
     g_clickThrough = enable;
 }
 
@@ -378,7 +378,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
                     g_configPath.c_str());
             } else {
                 swprintf_s(buf,
-                    L"  OVERLAY  |  Ctrl+Shift+T: Click-Through [%s]"
+                    L"  WMP  |  Ctrl+Shift+T: Click-Through [%s]"
                     L"  |  Ctrl+Shift+H: Screen [%s]"
                     L"  |  Ctrl+Shift+S: Settings"
                     L"  |  Ctrl+Shift+Q: Quit",
@@ -424,9 +424,23 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
             SetTimer(hwnd, TIMER_GIF, g_gifDelaysMs[g_gifFrameIndex], NULL);
             InvalidateRect(hwnd, NULL, FALSE);
         }
-        if (wParam == TIMER_WATCH && g_configDirty.exchange(false)) {
-            LoadConfig();
-            ApplyConfig();
+        if (wParam == TIMER_WATCH) {
+            SetWindowPos(g_hwnd, HWND_TOPMOST, 0, 0, 0, 0,
+                SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+        }
+        if (wParam == TIMER_WATCH && !g_configPath.empty()) {
+            HANDLE h = CreateFileW(g_configPath.c_str(), GENERIC_READ,
+                FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, OPEN_EXISTING, 0, NULL);
+            if (h != INVALID_HANDLE_VALUE) {
+                FILETIME ft = {};
+                GetFileTime(h, NULL, NULL, &ft);
+                CloseHandle(h);
+                if (CompareFileTime(&ft, &g_configLastWrite) != 0) {
+                    g_configLastWrite = ft;
+                    LoadConfig();
+                    ApplyConfig();
+                }
+            }
         }
         break;
 
@@ -447,20 +461,6 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
     return 0;
 }
 
-static void ConfigWatcherThread()
-{
-    std::wstring dir = DirName(g_configPath);
-    HANDLE hChange = FindFirstChangeNotificationW(dir.c_str(), FALSE, FILE_NOTIFY_CHANGE_LAST_WRITE);
-    if (hChange == INVALID_HANDLE_VALUE) return;
-
-    while (true) {
-        DWORD res = WaitForSingleObject(hChange, 2000);
-        if (res == WAIT_OBJECT_0) {
-            g_configDirty = true;
-            FindNextChangeNotification(hChange);
-        }
-    }
-}
 
 int WINAPI wWinMain(HINSTANCE hInst, HINSTANCE, PWSTR lpCmdLine, int)
 {
@@ -473,7 +473,7 @@ int WINAPI wWinMain(HINSTANCE hInst, HINSTANCE, PWSTR lpCmdLine, int)
     Gdiplus::GdiplusStartupInput gsi;
     if (Gdiplus::GdiplusStartup(&g_gdiplusToken, &gsi, NULL) != Gdiplus::Ok) return 0;
 
-    HANDLE mutex = CreateMutexW(NULL, TRUE, L"TopOverlay_SingleInstance");
+    HANDLE mutex = CreateMutexW(NULL, TRUE, L"WMP_SingleInstance");
     if (GetLastError() == ERROR_ALREADY_EXISTS) {
         CloseHandle(mutex);
         Gdiplus::GdiplusShutdown(g_gdiplusToken);
@@ -504,9 +504,7 @@ int WINAPI wWinMain(HINSTANCE hInst, HINSTANCE, PWSTR lpCmdLine, int)
 
     ShowWindow(g_hwnd, SW_SHOWNOACTIVATE);
     UpdateWindow(g_hwnd);
-
-    std::thread watcher(ConfigWatcherThread);
-    watcher.detach();
+    SetWindowPos(g_hwnd, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
 
     SetTimer(g_hwnd, TIMER_WATCH, 1000, NULL);
 

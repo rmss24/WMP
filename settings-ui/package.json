@@ -1,7 +1,7 @@
 {
-  "name": "overlay-settings",
+  "name": "wmp-settings",
   "version": "1.0.0",
-  "description": "Settings UI for TopOverlay",
+  "description": "Settings UI for Addiction to White Monster is a problem",
   "main": "out/main/index.js",
   "scripts": {
     "dev": "electron-vite dev",
@@ -24,8 +24,8 @@
     "typescript": "^5.7.0"
   },
   "build": {
-    "appId": "com.topoverlay.app",
-    "productName": "TopOverlay",
+    "appId": "com.wmp.app",
+    "productName": "Addiction to White Monster is a problem",
     "directories": {
       "output": "../dist-installer"
     },
@@ -43,7 +43,7 @@
         "filter": ["**/*"]
       },
       {
-        "from": "../config.json",
+        "from": "../config.installer.json",
         "to": "config.json"
       }
     ],
@@ -58,8 +58,8 @@
       "perMachine": false,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "TopOverlay",
-      "uninstallDisplayName": "TopOverlay"
+      "shortcutName": "WMP",
+      "uninstallDisplayName": "Addiction to White Monster is a problem"
     }
   }
 }

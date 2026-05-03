@@ -11,7 +11,7 @@ export default function TitleBar({ saved, onMinimize, onClose }: Props) {
     <div className="titlebar">
       <div className="titlebar-drag">
         <span className="titlebar-icon">⬡</span>
-        <span className="titlebar-title">Overlay Settings</span>
+        <span className="titlebar-title">WMP Settings</span>
         {saved && <span className="titlebar-saved">Salvato ✓</span>}
       </div>
       <div className="titlebar-controls">
