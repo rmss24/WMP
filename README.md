@@ -1,24 +1,26 @@
-# TopOverlay
+# Addiction to White Monster is a problem
 
-Overlay desktop per Windows con mirino, bordo schermo, HUD testuale e personaggio GIF animato. Il progetto include anche una piccola app Electron/React per modificare le impostazioni senza intervenire a mano su `config.json`.
+A Windows desktop overlay with a configurable crosshair, screen border, text HUD, and animated GIF character. The project also includes an Electron/React settings app so the overlay can be configured without editing JSON by hand.
 
-## Funzionalita
+## Features
 
-- Overlay sempre in primo piano e trasparente.
-- Modalita click-through, cosi mouse e click passano all'app sotto l'overlay.
-- Mirino configurabile: colore, lunghezza, gap e spessore.
-- Bordo schermo configurabile: colore e spessore.
-- HUD testuale con scorciatoie rapide.
-- Personaggio GIF animato in basso a destra, con dimensioni e margine regolabili.
-- App impostazioni con pagine per Personaggi, Display e Sistema.
-- Sincronizzazione tra overlay e settings UI tramite `config.json`.
-- Avvio automatico con Windows tramite chiave di registro utente.
+- Always-on-top transparent Windows overlay.
+- Click-through mode so mouse input passes to the app underneath.
+- Configurable crosshair: color, length, gap, and thickness.
+- Configurable screen border: color and thickness.
+- Optional HUD with quick shortcut reminders.
+- Animated GIF character anchored to the bottom-right corner.
+- Settings app with character, display, and system controls.
+- Shared configuration through `config.json`.
+- Optional user-level Windows autostart through the registry.
+- NSIS installer build through Electron Builder.
 
-## Struttura del progetto
+## Project Structure
 
 ```text
 .
 |-- config.json
+|-- config.installer.json
 |-- launch-settings.bat
 |-- characters/
 |   `-- frieren/
@@ -29,7 +31,9 @@ Overlay desktop per Windows con mirino, bordo schermo, HUD testuale e personaggi
 |   |-- build_msvc.bat
 |   |-- build_mingw.bat
 |   |-- replace.bat
-|   `-- json.hpp
+|   |-- json.hpp
+|   |-- overlay.exe
+|   `-- overlay_static.exe
 `-- settings-ui/
     |-- package.json
     |-- electron.vite.config.ts
@@ -38,74 +42,77 @@ Overlay desktop per Windows con mirino, bordo schermo, HUD testuale e personaggi
     `-- src/renderer/
 ```
 
-## Requisiti
+## Requirements
 
 - Windows.
-- Node.js e npm per l'app impostazioni.
-- Electron viene installato tramite npm.
-- Per compilare l'overlay C++ serve una delle seguenti opzioni:
-  - Visual Studio Build Tools / Developer Command Prompt, oppure
-  - MinGW con `g++` nel PATH, oppure
-  - CMake 3.15+ con un compilatore C++17.
+- Node.js and npm for the settings app.
+- Electron dependencies installed through npm.
+- One C++17 toolchain for the overlay:
+  - Visual Studio Build Tools / Visual Studio Developer Command Prompt,
+  - MinGW with `g++` available in `PATH`, or
+  - CMake 3.15+ with a C++17 compiler.
 
-## Installazione
+## Setup
 
-Installa le dipendenze della settings UI:
+Install the settings app dependencies:
 
 ```bat
 cd settings-ui
 npm install
 ```
 
-Se `node_modules` e gia presente, questo passaggio puo non essere necessario.
+If `node_modules` already exists, this step may already be done.
 
-## Avvio rapido
+## Quick Start
 
-Per aprire la finestra impostazioni dalla root del progetto:
+From the repository root, open the settings app with:
 
 ```bat
 launch-settings.bat
 ```
 
-Per avviare l'overlay senza aprire automaticamente la settings UI:
+Start the overlay directly without automatically opening the settings app:
 
 ```bat
 overlay\overlay.exe --no-ui
 ```
 
-Se usi l'eseguibile generato nella cartella `overlay\build`, l'app impostazioni lo cerca in:
+In development, the settings app looks for the overlay executable in this order:
 
 ```text
-overlay\build\overlay.exe
+overlay\overlay_new.exe
+overlay\overlay_static.exe
+overlay\overlay.exe
 ```
 
-## Sviluppo settings UI
+## Settings App Development
 
-Dalla cartella `settings-ui`:
+Run the Electron/React app in development mode:
 
 ```bat
+cd settings-ui
 npm run dev
 ```
 
-Build della UI:
+Build the app:
 
 ```bat
 npm run build
 ```
 
-Preview della build:
+Preview the built app:
 
 ```bat
 npm run start
 ```
 
-La settings UI usa Electron + React + TypeScript. Il main process legge e scrive `config.json`, espone le API IPC al renderer tramite preload e puo lanciare l'overlay.
+The settings app uses Electron, React, and TypeScript. The Electron main process reads and writes `config.json`, exposes IPC APIs through the preload script, lists GIF characters, manages autostart, and can launch the overlay.
 
-## Compilazione overlay
+## Overlay Build
 
 ### MSVC
 
-Apri un Visual Studio Developer Command Prompt nella cartella `overlay`, poi esegui:
+Open a Visual Studio Developer Command Prompt in the `overlay` folder and run:
 
 ```bat
 build_msvc.bat
@@ -113,7 +120,7 @@ build_msvc.bat
 
 ### MinGW
 
-Con `g++` disponibile nel PATH:
+With `g++` available in `PATH`:
 
 ```bat
 cd overlay
@@ -128,14 +135,41 @@ cmake -S . -B build
 cmake --build build --config Release
 ```
 
-Il `CMakeLists.txt` imposta l'output dell'eseguibile direttamente nella cartella `build`.
+The CMake build writes the executable to the CMake build directory.
 
-## Configurazione
+## Installer Build
 
-Le impostazioni condivise vivono in `config.json`.
+The installer is built from the `settings-ui` package:
+
+```bat
+cd settings-ui
+npm run dist
+```
+
+Electron Builder writes the installer output to:
+
+```text
+dist-installer/
+```
+
+The packaged app includes:
+
+- `overlay\overlay_static.exe` as `overlay.exe`.
+- The `characters/` folder.
+- `config.installer.json` copied as `config.json`.
+
+Before building the installer, make sure `overlay\overlay_static.exe` exists and is up to date.
+
+## Configuration
+
+Runtime settings are stored in `config.json` during development. The installer uses `config.installer.json` as the packaged default configuration.
+
+Example:
 
 ```json
 {
+  "version": 1,
+  "autoStart": false,
   "debugMode": false,
   "launchSettingsOnStart": true,
   "character": {
@@ -168,80 +202,93 @@ Le impostazioni condivise vivono in `config.json`.
 }
 ```
 
-Campi principali:
+Main fields:
 
-- `debugMode`: mostra informazioni extra nell'HUD.
-- `launchSettingsOnStart`: apre la settings UI quando parte `overlay.exe`.
-- `character.enabled`: mostra o nasconde la GIF.
-- `character.path`: percorso assoluto o relativo alla root del progetto.
-- `character.maxWidth` / `maxHeight`: limiti massimi della GIF in pixel.
-- `character.margin`: distanza dal bordo basso/destro.
-- `crosshair`: controlli del mirino.
-- `border`: controlli del bordo schermo.
-- `hud.enabled`: mostra o nasconde il testo in alto.
-- `overlay.visible`: stato iniziale dell'overlay.
-- `overlay.clickThrough`: stato iniziale del click-through.
+- `autoStart`: reflects whether Windows autostart is enabled.
+- `debugMode`: shows extra debug information in the HUD.
+- `launchSettingsOnStart`: opens the settings app when `overlay.exe` starts.
+- `character.enabled`: shows or hides the GIF character.
+- `character.path`: absolute path or path relative to the project/resources root.
+- `character.maxWidth` / `character.maxHeight`: maximum GIF size in pixels.
+- `character.margin`: distance from the bottom and right screen edges.
+- `crosshair`: crosshair visibility, geometry, and color.
+- `border`: screen border visibility, thickness, and color.
+- `hud.enabled`: shows or hides the HUD text.
+- `overlay.visible`: initial overlay visibility.
+- `overlay.clickThrough`: initial click-through state.
 
-## Personaggi GIF
+## GIF Characters
 
-I personaggi vengono cercati dentro `characters/`, usando una cartella per personaggio:
+Characters are discovered inside `characters/`, with one folder per character:
 
 ```text
 characters/
-`-- nome-personaggio/
-    `-- animazione.gif
+`-- character-name/
+    `-- animation.gif
 ```
 
-La settings UI mostra automaticamente le GIF trovate. Puoi anche selezionare una GIF esterna con il pulsante di aggiunta.
+The settings app automatically lists GIFs found there. You can also select an external GIF from the character page.
 
-## Scorciatoie
+## Shortcuts
 
-Quando l'overlay e attivo:
+When the overlay is running:
 
-- `Ctrl+Shift+H`: mostra/nasconde overlay.
-- `Ctrl+Shift+T`: attiva/disattiva click-through.
-- `Ctrl+Shift+S`: apre le impostazioni.
-- `Ctrl+Shift+Q`: chiude l'overlay.
+- `Ctrl+Shift+H`: show or hide the overlay.
+- `Ctrl+Shift+T`: toggle click-through mode.
+- `Ctrl+Shift+S`: open the settings app.
+- `Ctrl+Shift+Q`: quit the overlay.
 
-Quando cambi visibilita o click-through con una scorciatoia, l'overlay salva lo stato in `config.json`, cosi la settings UI rimane aggiornata.
+When visibility or click-through is changed with a shortcut, the overlay saves the new state to `config.json` so the settings app stays in sync.
 
-## Avvio automatico
+## Autostart
 
-La pagina Sistema puo aggiungere o rimuovere l'avvio automatico tramite:
+The System page can enable or disable user-level autostart through:
 
 ```text
 HKCU\Software\Microsoft\Windows\CurrentVersion\Run
 ```
 
-La voce punta a `overlay\build\overlay.exe`. Se usi una posizione diversa per l'eseguibile, aggiorna il codice o copia l'eseguibile nella posizione attesa.
+The registry value is named `WMP` and points to the overlay executable found by the settings app. In a packaged build, that is the `overlay.exe` file inside the app resources directory.
 
-## Note operative
+## Technical Notes
 
-- L'overlay usa GDI+ per caricare e disegnare GIF animate.
-- La trasparenza usa una color key quasi nera: `RGB(1, 1, 1)`.
-- L'app Electron usa `OVERLAY_ROOT` quando viene avviata da `launch-settings.bat`, cosi trova correttamente `config.json`, `characters/` e `overlay/`.
-- `json.hpp` e la libreria header-only nlohmann/json usata dal lato C++.
+- The overlay uses GDI+ to load and draw animated GIFs.
+- Transparency is implemented with a near-black color key: `RGB(1, 1, 1)`.
+- `launch-settings.bat` sets `OVERLAY_ROOT` so the settings app can find `config.json`, `characters/`, and `overlay/` from the repository root.
+- `json.hpp` is the header-only nlohmann/json library used by the C++ overlay.
 
-## Problemi comuni
+## Troubleshooting
 
-### La settings UI non trova i personaggi
+### The settings app does not find characters
 
-Avvia l'app da `launch-settings.bat` oppure imposta `OVERLAY_ROOT` alla root del progetto.
+Start it through `launch-settings.bat`, or set `OVERLAY_ROOT` to the repository root.
 
-### Il pulsante "Avvia Overlay" non parte
+### The "Launch Overlay" button does nothing
 
-Controlla che esista:
+Make sure one of these files exists:
 
 ```text
-overlay\build\overlay.exe
+overlay\overlay_new.exe
+overlay\overlay_static.exe
+overlay\overlay.exe
 ```
 
-In alternativa compila l'overlay e copia l'eseguibile nella posizione attesa.
+Then try launching the overlay again from the settings app.
 
-### L'overlay blocca i click
+### The installer build fails because the overlay is missing
 
-Premi `Ctrl+Shift+T` per riattivare il click-through, oppure abilitalo dalla pagina Sistema.
+Build or copy the static overlay executable to:
 
-### Le modifiche non si vedono subito
+```text
+overlay\overlay_static.exe
+```
 
-L'overlay osserva `config.json` e applica le modifiche. Se qualcosa resta bloccato, chiudi l'overlay con `Ctrl+Shift+Q` e riaprilo.
+Then run `npm run dist` again from `settings-ui`.
+
+### The overlay blocks clicks
+
+Press `Ctrl+Shift+T` to toggle click-through mode, or enable click-through from the System page.
+
+### Changes do not appear immediately
+
+The overlay watches `config.json` and applies changes automatically. If something gets stuck, quit the overlay with `Ctrl+Shift+Q` and start it again.
